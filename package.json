@@ -6,11 +6,20 @@
   "scripts": {
     "dev": "node --watch ./src/index.js",
     "start": "node src/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:demo": "node src/demo-crud.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "type": "module",
   "dependencies": {
-    "express": "^5.2.1"
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
   }
 }
