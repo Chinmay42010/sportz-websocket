@@ -16,3 +16,6 @@ const url = `http://localhost:${PORT}`;
 app.listen(PORT, () => {
   console.log(`Server started. URL: ${url}`);
 });
+
+// 50:10
+// 1:39:04
