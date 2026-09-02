@@ -14,6 +14,8 @@
   "keywords": [],
   "type": "module",
   "dependencies": {
+    "@arcjet/inspect": "^1.11.0",
+    "@arcjet/node": "^1.11.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
