@@ -9,8 +9,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:demo": "node src/demo-crud.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "seed": "node src/seed/seed.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "type": "module",

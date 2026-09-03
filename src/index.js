@@ -17,6 +17,15 @@ const server = http.createServer(app);
 // JSON middleware
 app.use(express.json());
 
+// CORS for frontend (vite on 3000/5173) — ponytail: no new dep, manual headers
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // Root route
 app.get("/", (req, res) => {
     res.send("Hello from Express server");
@@ -35,10 +44,34 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: "Internal Server Error" });
 });
 
-const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate } = attachWebSocketServer(server);
+const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate, getActiveMatchIds } = attachWebSocketServer(server);
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 app.locals.broadcastCommentary = broadcastCommentary;
 app.locals.broadcastScoreUpdate = broadcastScoreUpdate;
+
+// football live sync (polling) — only if key set, cached 60s
+let footballPollTimer = null;
+let eventsPollTimer = null;
+if (process.env.API_FOOTBALL_KEY) {
+  const { pollFootball, syncEventsForMatch } = await import("./services/apiFootball.js");
+  const startPoll = () => {
+    pollFootball({ broadcastMatchCreated, broadcastScoreUpdate }).catch((e) => console.error("pollFootball error:", e.message));
+  };
+  // initial sync after boot, then every 5 min to stay under 100/day
+  setTimeout(startPoll, 5000);
+  footballPollTimer = setInterval(startPoll, 5 * 60 * 1000);
+  // events for watched matches only — ponytail: 45s interval, only if someone is watching
+  eventsPollTimer = setInterval(() => {
+    const ids = getActiveMatchIds();
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      syncEventsForMatch(id, broadcastCommentary).catch((e) => console.error("events poll error:", e.message));
+    }
+  }, 45 * 1000);
+  console.log("API football polling enabled (5m interval, 60s cache) + events for watched matches (45s)");
+} else {
+  console.log("API_FOOTBALL_KEY not set — football live sync disabled");
+}
 
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
