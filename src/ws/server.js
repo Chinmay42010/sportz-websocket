@@ -59,27 +59,62 @@ function broadcastToMatch(matchId, payload) {
     }
 }
 
+function toMatchId(raw) {
+    const n = Number(raw);
+    return Number.isInteger(n) ? n : null;
+}
+
 function handleMessage(socket, data) {
     let message;
 
     try {
         message = JSON.parse(data.toString());
     } catch {
-        sendJson(socket, { type: "error", message: "Invalid Json" });
+        sendJson(socket, { type: "error", code: "invalid_json", message: "Invalid Json" });
         return;
     }
 
-    if (message?.type === "subscribe" && Number.isInteger(message.matchId)) {
-        subscribe(message.matchId, socket);
-        socket.subscriptions.add(message.matchId);
-        sendJson(socket, { type: "subscribed", matchId: message.matchId });
+    if (message?.type === "setSubscriptions" && Array.isArray(message.matchIds)) {
+        // ponytail: naive resubscribe — clear then re-add, O(n) fine for few matches
+        for (const id of socket.subscriptions) unsubscribe(id, socket);
+        socket.subscriptions.clear();
+        for (const raw of message.matchIds) {
+            const id = toMatchId(raw);
+            if (id === null) continue;
+            subscribe(id, socket);
+            socket.subscriptions.add(id);
+        }
+        sendJson(socket, { type: "subscriptions", matchIds: [...socket.subscriptions] });
         return;
     }
 
-    if (message?.type === "unsubscribe" && Number.isInteger(message.matchId)) {
-        unsubscribe(message.matchId, socket);
-        socket.subscriptions.delete(message.matchId);
-        sendJson(socket, { type: "unsubscribed", matchId: message.matchId });
+    if (message?.type === "subscribe") {
+        const id = toMatchId(message.matchId);
+        if (id === null) {
+            sendJson(socket, { type: "error", code: "invalid_matchId", message: "matchId must be integer" });
+            return;
+        }
+        subscribe(id, socket);
+        socket.subscriptions.add(id);
+        sendJson(socket, { type: "subscribed", matchId: id });
+        return;
+    }
+
+    if (message?.type === "unsubscribe") {
+        const id = toMatchId(message.matchId);
+        if (id === null) {
+            sendJson(socket, { type: "error", code: "invalid_matchId", message: "matchId must be integer" });
+            return;
+        }
+        unsubscribe(id, socket);
+        socket.subscriptions.delete(id);
+        sendJson(socket, { type: "unsubscribed", matchId: id });
+        return;
+    }
+
+    if (message?.type === "ping") {
+        sendJson(socket, { type: "pong" });
+        return;
     }
 }
 
@@ -162,8 +197,12 @@ export function attachWebSocketServer(server) {
     }
 
     function broadcastCommentary(matchId, comment) {
-        broadcastToMatch(matchId, {type: "commentary", data: comment});
+        broadcastToMatch(toMatchId(matchId) ?? matchId, { type: "commentary", data: comment });
     }
 
-    return { broadcastMatchCreated, broadcastCommentary };
+    function broadcastScoreUpdate(matchId, scores) {
+        broadcastToMatch(toMatchId(matchId) ?? matchId, { type: "score_update", matchId: toMatchId(matchId) ?? matchId, data: scores });
+    }
+
+    return { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate };
 }

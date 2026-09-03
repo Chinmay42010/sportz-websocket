@@ -22,14 +22,38 @@ app.get("/", (req, res) => {
     res.send("Hello from Express server");
 });
 
-app.use(securityMiddleware());
+// app.use(securityMiddleware());
 
 app.use("/matches", matchRouter);
 app.use("/matches/:id/commentary", commentaryRouter);
 
-const { broadcastMatchCreated, broadcastCommentary } = attachWebSocketServer(server);
+// global error handler so DB errors don't reset TCP
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    console.error("Express error:", err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: "Internal Server Error" });
+});
+
+const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate } = attachWebSocketServer(server);
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 app.locals.broadcastCommentary = broadcastCommentary;
+app.locals.broadcastScoreUpdate = broadcastScoreUpdate;
+
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+
+server.on("error", (err) => {
+    console.error("HTTP server error:", err);
+});
+
+process.on("uncaughtException", (err) => {
+    console.error("uncaughtException:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+    console.error("unhandledRejection:", reason);
+});
 
 server.listen(PORT, HOST, () => {
     const baseURl =
