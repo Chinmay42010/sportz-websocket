@@ -9,13 +9,15 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:demo": "node src/demo-crud.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "node src/seed/seed.js"
   },
   "keywords": [],
   "type": "module",
   "dependencies": {
     "@arcjet/inspect": "^1.11.0",
     "@arcjet/node": "^1.11.0",
+    "apminsight": "^5.5.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",

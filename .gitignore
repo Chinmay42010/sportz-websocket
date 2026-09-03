@@ -140,4 +140,8 @@ dist
 # Vite files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-.vite/
+.vite
+
+# AppDynamics / APM
+apmInsightNode.json
+apminsightdata/
