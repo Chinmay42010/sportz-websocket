@@ -14,6 +14,15 @@ const HOST = process.env.HOST || "0.0.0.0";
 const app = express();
 const server = http.createServer(app);
 
+// ponytail: manual CORS locked to Vercel prod, allowlist/regex if previews needed
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "https://sportz-frontend-iota.vercel.app");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+});
+
 // JSON middleware
 app.use(express.json());
 
