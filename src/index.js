@@ -49,6 +49,10 @@ app.locals.broadcastMatchCreated = broadcastMatchCreated;
 app.locals.broadcastCommentary = broadcastCommentary;
 app.locals.broadcastScoreUpdate = broadcastScoreUpdate;
 
+// ponytail: cricket live poll every 15m (100/day limit), disabled if CRICKETDATA_API_KEY missing
+import { startCricketPoll } from "./jobs/cricketPoll.js";
+const cricketPoll = startCricketPoll({ broadcastMatchCreated, broadcastScoreUpdate });
+
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 

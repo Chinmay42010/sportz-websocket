@@ -16,6 +16,7 @@ export const matchStatus = pgEnum("match_status", [
 
 export const matches = pgTable("matches", {
     id: serial("id").primaryKey(),
+    externalId: text("external_id").unique(),
     sport: text("sport").notNull(),
     homeTeam: text("home_team").notNull(),
     awayTeam: text("away_team").notNull(),
