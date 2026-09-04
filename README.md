@@ -1,51 +1,51 @@
 # Sportz — Real time Sports data
 
-Live cricket scores + full scorecard (overs, batsman, bowler, runs, wickets) & commentary, pushed live over WebSocket.
+Live cricket scores, full scorecard and commentary, updated live without refresh.
 
-**Live:** Frontend https://sportz-frontend-iota.vercel.app • API https://sportz-websocket-2wq7.onrender.com • WS `wss://sportz-websocket-2wq7.onrender.com/ws`
+**Live:** Frontend https://sportz-frontend-iota.vercel.app • API https://sportz-websocket-2wq7.onrender.com
 
-Repos: `sportz-websocket` (this, Node) + `sportz-frontend` (Vite + React in `../sportz-frontend`).
+Two parts: `sportz-websocket` (backend) + `sportz-frontend` (website).
 
 ---
 
-## How it works (simple)
+## How it works
 
-1. Browser opens `https://sportz-frontend-iota.vercel.app` → fetches `GET /matches` from Render.
-2. Click `Watch Live` → `GET /matches/:id/scorecard` + `GET /matches/:id/commentary` + `subscribe` over `wss://.../ws`.
-3. Server polls cricket providers every `1h` (match list) + `2h` (scorecard) → saves to Neon `matches.metadata` → pushes `score_update / scorecard / commentary` to subscribed browsers.
+1. You open the website → it loads the list of matches.
+2. You click **Watch Live** → it shows that match's scorecard and commentary and starts listening for live updates.
+3. The server checks cricket providers every couple of hours, saves the latest scores to the database, and pushes updates to everyone watching that match.
 
 ## Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant U as Browser (Vercel)
-    participant A as API (Render Express)
-    participant D as DB (Neon)
-    participant P as Providers (CricAPI / Cricbuzz RapidAPI)
-    participant W as WS /ws
+    participant U as Browser
+    participant A as API Server
+    participant D as Database
+    participant P as Cricket Providers
+    participant W as Live Connection
 
-    U->>A: GET /matches?limit=100
-    A->>D: SELECT matches
-    D-->>A: rows
-    A-->>U: {data: [...]}
+    U->>A: Load matches
+    A->>D: Get matches
+    D-->>A: Match list
+    A-->>U: Show matches
 
-    U->>A: GET /matches/:id/scorecard + /commentary
-    A->>D: SELECT metadata, commentary
-    D-->>A: scorecard/batsman/bowler + messages
-    A-->>U: scorecard + commentary
+    U->>A: Watch a match
+    A->>D: Get scorecard + commentary
+    D-->>A: Match data
+    A-->>U: Show match data
 
-    U->>W: WebSocket GET /ws Upgrade: websocket
-    W-->>U: 101 Switching Protocols (same TCP now WS frames)
-    U->>W: {type:"subscribe", matchId: 66}
-    W-->>U: {type:"subscribed"} + {type:"welcome"}
+    U->>W: Connect for live updates
+    W-->>U: Connected
 
-    loop Every 1h / 2h
-        A->>P: POST currentMatches / GET mcenter/v1/{id}/hscard
-        P-->>A: score r/w/o + batsman/bowler tables
-        A->>D: INSERT/UPDATE matches (metadata jsonb)
-        A->>W: broadcastScoreUpdate / broadcastScorecard (per match)
-        W-->>U: {type:"score_update" / "scorecard" / "commentary"}
-        U->>U: Update MatchData tables + LiveFeed
+    U->>W: Subscribe to this match
+    W-->>U: Confirmed
+
+    loop Every 1-2 hours
+        A->>P: Get latest scores
+        P-->>A: New scores
+        A->>D: Save to database
+        A->>W: Send update to watchers
+        W-->>U: New score appears
     end
 ```
 
@@ -53,32 +53,30 @@ sequenceDiagram
 
 ## Tools Used
 
-| Tool | For |
-|------|-----|
-| **Node.js + Express 5** | REST API (`/matches`, `/commentary`, `/scorecard`) |
-| **ws 8** | WebSocket `/ws` (`noServer`, `maxPayload 1MB`, `30s ping/pong`) |
-| **pg + drizzle-orm / drizzle-kit** | Postgres queries + migrations `drizzle/*.sql` |
-| **Neon Postgres** | Serverless DB (`sslmode=require`) |
-| **Zod 4** | Validates `limit`, `matchId`, `createMatch` (`end>start`) |
-| **Arcjet** | Bot / WAF / Rate limit (see Security) |
-| **apminsight** | APM `AgentAPI.config()` |
-| **dotenv** | Env `process.env` |
-| **CricAPI** | `currentMatches` totals `100/day` |
-| **Cricbuzz via RapidAPI** | `mcenter/v1/{id}/hscard` full scorecard `500/month` |
-| **Vite + React 19 + TypeScript** | Frontend `sportz-frontend` (`MatchData` tabs) |
-| **Render / Vercel / Cloudflare** | API / UI / Proxy |
+| Tool | What it does |
+|------|--------------|
+| **Node.js + Express** | Runs the API server |
+| **WebSocket (ws)** | Live push for scores and commentary |
+| **Postgres (Neon) + Drizzle** | Stores matches and commentary |
+| **Zod** | Checks all inputs are valid |
+| **Arcjet** | Security — blocks bots, attacks and spam |
+| **dotenv** | Loads secret keys safely |
+| **CricAPI + Cricbuzz (RapidAPI)** | Gives real cricket data |
+| **Vite + React + TypeScript** | Builds the website |
+| **Render + Vercel + Cloudflare** | Hosts API, website and makes them fast |
 
 ---
 
-## Backend Security (simple)
+## Backend Security
 
-- **Arcjet:** `shield` (WAF) + `detectBot` (allows `SEARCH_ENGINE/PREVIEW`) + `slidingWindow` rate limit — `50 req/10s` for HTTP, `5 req/2s` for WS upgrade (`src/arcjet.js`). Blocks before DB.
-- **WS upgrade gate:** Checks `req.url startsWith /ws` then `wsArcjet.protect()` → `429/403` + `destroy()` (`src/ws/server.js`). `maxPayload 1MB`, `readyState OPEN` guard, `invalid_json` check.
-- **CORS:** Locked to `https://sportz-frontend-iota.vercel.app` (`src/index.js`), `OPTIONS → 204`.
-- **Validation:** All query/body/params via `Zod` (`src/validation/`) → `400` never hits DB. `MAX_LIMIT 100`.
-- **DB safe:** Drizzle parameterized queries, `Pool max:10 keepAlive`, `external_id unique`, `metadata jsonb`, `.env` ignored, migrations versioned.
-- **Platform:** `keepAlive 65s` for Render, `uncaughtException/unhandledRejection` → `500`, quota guards `90/100` + dedup avoids spam.
-- **Secrets:** Provider keys (`CRICKETDATA_API_KEY`, `CRICBUZZ_API_KEY`) are server-only (`process.env`), never `VITE_` → never in browser.
+- **Blocks bots and attacks** before they reach the database.
+- **Limits how fast someone can call the API** (too many requests → blocked).
+- **Protects the live connection** so one person can't flood it.
+- **Only allows the real website** to call the API (CORS locked to Vercel).
+- **Checks every input** (like match id and scores) before saving.
+- **Uses safe database queries** so no one can inject SQL.
+- **Keeps secrets on the server only** — keys are never sent to the browser.
+- **Handles crashes** so one error doesn't kill the server.
 
 ---
 
@@ -86,49 +84,17 @@ sequenceDiagram
 
 ```bash
 # backend
-cd sportz-websocket
 npm install
-# create .env (see below)
 npm run db:migrate
-npm run dev        # http://localhost:8000  ws://localhost:8000/ws
-npm run seed       # optional: API_URL=http://localhost:8000 node src/seed/seed.js
+npm run dev
 
-# frontend
-cd ../sportz-frontend
+# frontend (in ../sportz-frontend)
 npm install
-echo 'VITE_API_BASE_URL=http://localhost:8000
-VITE_WS_BASE_URL=ws://localhost:8000/ws' > .env
-npm run dev        # http://localhost:5173
+npm run dev
 ```
 
-**Backend `.env`**
-
-```
-DATABASE_URL=postgresql://...neon.tech/neondb?sslmode=require
-ARCJET_KEY=ajkey_...
-ARCJET_ENV=production
-CRICKETDATA_API_KEY=f0cd...
-CRICBUZZ_API_KEY=1f4a...
-CRICBUZZ_HOST=cricbuzz-cricket.p.rapidapi.com
-```
-
-On Render add same vars, on Vercel add `VITE_*` then redeploy.
+No code or secret keys are needed in the README — just install and run.
 
 ---
 
-## Folder
-
-```
-src/
-  index.js         # Express + CORS + WS + poll start
-  arcjet.js        # shield / bot / rate limits
-  routes/          # matches.js, commentary.js, scorecard.js
-  ws/server.js     # subscribe, broadcast, heartbeat
-  jobs/cricketPoll.js # 1h currentMatches + 2h scorecard
-  providers/       # cricketdata.js, cricbuzz.js
-  db/schema.js     # matches(metadata jsonb), commentary
-  validation/      # Zod
-drizzle/           # 0001_external_id, 0002_metadata
-```
-
-MIT
+MIT — Made for learning and demos.
