@@ -204,5 +204,9 @@ export function attachWebSocketServer(server) {
         broadcastToMatch(toMatchId(matchId) ?? matchId, { type: "score_update", matchId: toMatchId(matchId) ?? matchId, data: scores });
     }
 
-    return { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate };
+    function broadcastScorecard(matchId, scorecard) {
+        broadcastToMatch(toMatchId(matchId) ?? matchId, { type: "scorecard", matchId: toMatchId(matchId) ?? matchId, data: scorecard });
+    }
+
+    return { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate, broadcastScorecard };
 }

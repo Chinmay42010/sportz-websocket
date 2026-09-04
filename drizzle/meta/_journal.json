@@ -15,6 +15,13 @@
       "when": 1788546936800,
       "tag": "0001_chemical_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788548900615,
+      "tag": "0002_omniscient_thunderball",
+      "breakpoints": true
     }
   ]
 }

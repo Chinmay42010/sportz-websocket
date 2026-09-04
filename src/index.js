@@ -7,6 +7,7 @@ import { matchRouter } from "./routes/matches.js";
 import { attachWebSocketServer } from "./ws/server.js";
 import { securityMiddleware } from "./arcjet.js";
 import { commentaryRouter } from "./routes/commentary.js";
+import { scorecardRouter } from "./routes/scorecard.js";
 
 const PORT = Number(process.env.PORT || 8000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -35,6 +36,7 @@ app.get("/", (req, res) => {
 
 app.use("/matches", matchRouter);
 app.use("/matches/:id/commentary", commentaryRouter);
+app.use("/matches/:id/scorecard", scorecardRouter);
 
 // global error handler so DB errors don't reset TCP
 // eslint-disable-next-line no-unused-vars
@@ -44,14 +46,15 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: "Internal Server Error" });
 });
 
-const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate } = attachWebSocketServer(server);
+const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate, broadcastScorecard } = attachWebSocketServer(server);
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 app.locals.broadcastCommentary = broadcastCommentary;
 app.locals.broadcastScoreUpdate = broadcastScoreUpdate;
+app.locals.broadcastScorecard = broadcastScorecard;
 
-// ponytail: cricket live poll every 15m (100/day limit), disabled if CRICKETDATA_API_KEY missing
+// ponytail: cricket live poll 1h list (100/day) + 2h scorecard (500/month), disabled if key missing
 import { startCricketPoll } from "./jobs/cricketPoll.js";
-const cricketPoll = startCricketPoll({ broadcastMatchCreated, broadcastScoreUpdate });
+const cricketPoll = startCricketPoll({ broadcastMatchCreated, broadcastScoreUpdate, broadcastScorecard });
 
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
