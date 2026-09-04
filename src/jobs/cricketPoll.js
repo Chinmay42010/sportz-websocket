@@ -1,9 +1,9 @@
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { matches } from "../db/schema.js";
 import { fetchCurrentMatches, mapCricToMatch } from "../providers/cricketdata.js";
-import { fetchCricbuzzScorecard, mapCricbuzzScorecard } from "../providers/cricbuzz.js";
+import { fetchCricbuzzLiveMatches, parseCricbuzzLive, mapCricbuzzLiveToMatch, fetchCricbuzzScorecard, mapCricbuzzScorecard } from "../providers/cricbuzz.js";
 
 // ponytail: global interval, per-match timer if quota grows
 const POLL_MS = Number(process.env.CRICKETDATA_POLL_MS || 60 * 60 * 1000);
@@ -65,6 +65,43 @@ async function syncOnce({ broadcastMatchCreated, broadcastScoreUpdate, broadcast
             }
         }
         console.log(`[cricketPoll] synced ${data.length} matches, hitsToday ${info?.hitsToday}/${info?.hitsLimit}`);
+
+        // ponytail: also seed Cricbuzz live matches when RapidAPI key present (numeric ids enable scorecard)
+        if (process.env.CRICBUZZ_API_KEY && process.env.CRICBUZZ_HOST) {
+            try {
+                const liveJson = await fetchCricbuzzLiveMatches();
+                const liveList = parseCricbuzzLive(liveJson);
+                for (const c of liveList) {
+                    const m = mapCricbuzzLiveToMatch(c);
+                    const existing = await db.select().from(matches).where(eq(matches.externalId, m.externalId)).limit(1);
+                    const row = existing[0];
+                    const meta = { cricbuzz: c.raw, cricbuzzScore: c.score };
+                    if (!row) {
+                        const [created] = await db.insert(matches).values({
+                            externalId: m.externalId,
+                            sport: m.sport,
+                            homeTeam: m.homeTeam,
+                            awayTeam: m.awayTeam,
+                            status: m.status,
+                            startTime: m.startTime,
+                            endTime: m.endTime,
+                            homeScore: m.homeScore,
+                            awayScore: m.awayScore,
+                            metadata: meta,
+                        }).returning();
+                        console.log(`[cricketPoll] cricbuzz created ${created.id} ${m.homeTeam} vs ${m.awayTeam} ${m.homeScore}-${m.awayScore} ${m.status}`);
+                        if (broadcastMatchCreated) broadcastMatchCreated(created);
+                    } else if (row.homeScore !== m.homeScore || row.awayScore !== m.awayScore || row.status !== m.status) {
+                        await db.update(matches).set({ homeScore: m.homeScore, awayScore: m.awayScore, status: m.status, metadata: meta }).where(eq(matches.id, row.id));
+                        console.log(`[cricketPoll] cricbuzz score ${row.id} ${m.homeScore}-${m.awayScore}`);
+                        if (broadcastScoreUpdate) broadcastScoreUpdate(row.id, { homeScore: m.homeScore, awayScore: m.awayScore });
+                    }
+                }
+                console.log(`[cricketPoll] cricbuzz synced ${liveList.length} live matches`);
+            } catch (e) {
+                console.warn(`[cricketPoll] cricbuzz live skip: ${e.message}`);
+            }
+        }
     } catch (e) {
         console.error("[cricketPoll] sync error:", e.message);
     } finally {
@@ -76,10 +113,14 @@ async function syncScorecards({ broadcastScorecard } = {}) {
     if (scoreRunning) return;
     scoreRunning = true;
     try {
-        const liveRows = await db.select().from(matches).where(eq(matches.status, "live")).limit(2);
+        // ponytail: fetch scorecard for cricbuzz rows (cb-*) regardless of live/finished to backfill first display; limit 2 to respect 500/month
+        const rows = await db.select().from(matches).where(like(matches.externalId, "cb-%")).limit(2);
+        const liveRows = rows.length ? rows : await db.select().from(matches).where(eq(matches.status, "live")).limit(2);
         for (const row of liveRows) {
-            const cricId = row.externalId;
-            if (!cricId || (cricId.includes("-") && cricId.length === 36)) continue; // cricketdata guid → no cricbuzz id
+            let cricId = row.externalId;
+            if (!cricId) continue;
+            if (cricId.startsWith("cb-")) cricId = cricId.replace("cb-", "");
+            if (cricId.includes("-") && cricId.length === 36) continue; // cricketdata guid → no cricbuzz id
             try {
                 const raw = await fetchCricbuzzScorecard(cricId);
                 const scorecard = mapCricbuzzScorecard(raw);
