@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { matches } from "../db/schema.js";
 import { matchIdParamSchema } from "../validation/matches.js";
+import { isCricbuzzQuotaExhausted } from "../jobs/cricketPoll.js";
 
 export const scorecardRouter = Router({ mergeParams: true });
 
@@ -15,7 +16,8 @@ scorecardRouter.get("/", async (req, res) => {
         if (!row) return res.status(404).json({ error: "Match not found" });
         const scorecard = row.metadata?.scorecard || null;
         const cricapi = row.metadata?.cricapi || null;
-        return res.json({ data: { scorecard, cricapi, metadata: row.metadata, homeScore: row.homeScore, awayScore: row.awayScore, status: row.status } });
+        const dataStale = isCricbuzzQuotaExhausted();
+        return res.json({ data: { scorecard, cricapi, metadata: row.metadata, homeScore: row.homeScore, awayScore: row.awayScore, status: row.status, lastSyncedAt: row.lastSyncedAt, dataStale } });
     } catch (e) {
         return res.status(500).json({ error: "Failed to fetch scorecard", details: String(e.message) });
     }

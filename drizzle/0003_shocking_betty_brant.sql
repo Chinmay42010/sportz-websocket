@@ -1,0 +1,1 @@
+ALTER TABLE "matches" ADD COLUMN "last_synced_at" timestamp;

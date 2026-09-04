@@ -9,6 +9,7 @@ import { matches } from "../db/schema.js";
 import { getMatchStatus } from "../utils/match-status.js";
 import { db } from "../db/db.js";
 import { desc, eq } from "drizzle-orm";
+import { isCricbuzzQuotaExhausted } from "../jobs/cricketPoll.js";
 
 export const matchRouter = Router();
 
@@ -26,13 +27,14 @@ matchRouter.get("/", async (req, res) => {
     const limit = Math.min(parsed.data.limit ?? 50, MAX_LIMIT);
 
     try {
-        const data = await db
+        const rows = await db
             .select()
             .from(matches)
             .orderBy(desc(matches.createdAt))
             .limit(limit);
-
-        res.json({ data });
+        const dataStale = isCricbuzzQuotaExhausted();
+        const data = rows.map(r => ({ ...r, dataStale }));
+        res.json({ data, meta: { dataStale } });
     } catch (error) {
         res.status(500).json({ error: "Failed to list matches" });
     }
@@ -90,10 +92,11 @@ matchRouter.patch("/:id/score", async (req, res) => {
         const [updated] = await db.update(matches).set({
             homeScore: parsedBody.data.homeScore,
             awayScore: parsedBody.data.awayScore,
+            lastSyncedAt: new Date(),
         }).where(eq(matches.id, parsedParams.data.id)).returning();
         if (!updated) return res.status(404).json({ error: "Match not found" });
         if (res.app.locals.broadcastScoreUpdate) {
-            res.app.locals.broadcastScoreUpdate(updated.id, { homeScore: updated.homeScore, awayScore: updated.awayScore });
+            res.app.locals.broadcastScoreUpdate(updated.id, { homeScore: updated.homeScore, awayScore: updated.awayScore, lastSyncedAt: updated.lastSyncedAt });
         }
         res.json({ data: updated });
     } catch (e) {

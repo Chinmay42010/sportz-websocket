@@ -1,99 +1,90 @@
-# Sportz — Real time Sports data
+# Sportz — Cricket Scores, Without the Refresh Button
 
-Live cricket scores, full scorecard and commentary, updated live without refresh.
+Sportz is a simple website for following cricket matches. Pick any match, hit Watch, and the score and scorecard update on their own — no page reloads. It's built for fans who want to glance at scores during work or class, and for recruiters or students who want to see a small, honest example of a WebSocket-powered app. Under the hood, instant delivery and periodic data fetching are separate: when new data arrives it's pushed to your browser instantly, but the data itself is fetched from cricket providers on a schedule (more often for games in progress, less often otherwise).
 
-**Live:** Frontend https://sportz-frontend-iota.vercel.app • API https://sportz-websocket-2wq7.onrender.com
+**Live:** Frontend https://sportz-frontend-iota.vercel.app · API https://sportz-websocket-2wq7.onrender.com
 
-Two parts: `sportz-websocket` (backend) + `sportz-frontend` (website).
+Two parts: `sportz-frontend` (the website) + `Sportz` (the API server). Either can run on its own.
 
 ---
 
 ## How it works
 
-1. You open the website → it loads the list of matches.
-2. You click **Watch Live** → it shows that match's scorecard and commentary and starts listening for live updates.
-3. The server checks cricket providers every couple of hours, saves the latest scores to the database, and pushes updates to everyone watching that match.
+1. You open the website — it loads the list of matches from the server.
+2. You click **Watch Live** (or **View Match** / **View Recap**) on any card — the site fetches that match's detailed scorecard and commentary.
+3. The site opens a persistent connection and tells the server "send me updates for this match."
+4. In the background, the server periodically asks outside cricket data providers for the latest scores and saves them.
+5. If something actually changed, the server pushes the new score or scorecard to everyone watching that match — it appears on your screen right away. Each card shows "Updated Xm ago" so you can see how fresh the data is, or "Updates paused — daily limit reached" if the provider quota is exhausted for the day.
 
-## Sequence Diagram
+---
+
+## Data flow
 
 ```mermaid
-sequenceDiagram
-    participant U as Browser
-    participant A as API Server
-    participant D as Database
-    participant P as Cricket Providers
-    participant W as Live Connection
+flowchart LR
+    Browser["Browser<br/>(Website)"]
+    API["API Server<br/>(Express)"]
+    DB[("Database<br/>(Postgres)")]
+    Providers["Cricket Data Providers<br/>(CricAPI + Cricbuzz)"]
+    WS["WebSocket Layer"]
 
-    U->>A: Load matches
-    A->>D: Get matches
-    D-->>A: Match list
-    A-->>U: Show matches
+    Browser -- "load matches" --> API
+    API -- "read / write matches" --> DB
+    Providers -- "match scores" --> API
+    API -- "WebSocket push" --> WS
+    WS -- "score updates" --> Browser
+    Browser -- "subscribe to match" --> WS
 
-    U->>A: Watch a match
-    A->>D: Get scorecard + commentary
-    D-->>A: Match data
-    A-->>U: Show match data
-
-    U->>W: Connect for live updates
-    W-->>U: Connected
-
-    U->>W: Subscribe to this match
-    W-->>U: Confirmed
-
-    loop Every 1-2 hours
-        A->>P: Get latest scores
-        P-->>A: New scores
-        A->>D: Save to database
-        A->>W: Send update to watchers
-        W-->>U: New score appears
-    end
+    note1["Refresh is tiered to save quota:<br/>live matches checked every ~5 min (scores),<br/>scheduled every ~60 min, finished once then stopped.<br/>Detailed scorecards: live ~90 min, scheduled ~2 hours<br/>(500/month cap — ~16/day). When limit hit,<br/>UI shows 'Updates paused — daily limit reached'."]
+    note1 -.-> Providers
 ```
+
+> The note above is the only place intervals are mentioned — check the code if you change them, so the diagram doesn't go stale.
 
 ---
 
 ## Tools Used
 
-| Tool | What it does |
-|------|--------------|
-| **Node.js + Express** | Runs the API server |
-| **WebSocket (ws)** | Live push for scores and commentary |
-| **Postgres (Neon) + Drizzle** | Stores matches and commentary |
-| **Zod** | Checks all inputs are valid |
-| **Arcjet** | Security — blocks bots, attacks and spam |
-| **dotenv** | Loads secret keys safely |
-| **CricAPI + Cricbuzz (RapidAPI)** | Gives real cricket data |
-| **Vite + React + TypeScript** | Builds the website |
-| **Render + Vercel + Cloudflare** | Hosts API, website and makes them fast |
+| Tool                      | Purpose                                                    |
+| ------------------------- | ---------------------------------------------------------- |
+| Node.js + Express         | Runs the API that the website talks to                     |
+| WebSocket                 | Pushes score changes to browsers instantly without polling |
+| Postgres + Drizzle        | Stores matches, scores, and commentary                     |
+| Zod                       | Makes sure incoming data has the right shape               |
+| Arcjet                    | Blocks bots and abusive traffic                            |
+| CricAPI + Cricbuzz        | Outside sources for real cricket scores and scorecards     |
+| React + Vite + TypeScript | Builds the website you see in the browser                  |
+| Render + Vercel           | Hosts the API and the website                              |
 
 ---
 
-## Backend Security
+## Security
 
-- **Blocks bots and attacks** before they reach the database.
-- **Limits how fast someone can call the API** (too many requests → blocked).
-- **Protects the live connection** so one person can't flood it.
-- **Only allows the real website** to call the API (CORS locked to Vercel).
-- **Checks every input** (like match id and scores) before saving.
-- **Uses safe database queries** so no one can inject SQL.
-- **Keeps secrets on the server only** — keys are never sent to the browser.
-- **Handles crashes** so one error doesn't kill the server.
+- Automated bot and attack protection sits in front of both the API and the live connection.
+- Rate limiting slows down anyone making too many requests too quickly.
+- The live connection has its own stricter limit so one browser can't flood it.
+- Only the official website is allowed to call the API from a browser.
+- Every input (like a match id or a new score) is validated before it's saved.
+- Database queries are parameterized, so injected commands can't run.
+- Secret keys stay on the server and are never sent to the browser.
+- The server handles crashes gracefully so one bad request doesn't bring everything down.
 
 ---
 
 ## Run Locally
 
 ```bash
-# backend
+# backend — from the Sportz folder
 npm install
 npm run db:migrate
 npm run dev
 
-# frontend (in ../sportz-frontend)
+# frontend — from the sportz-frontend folder
 npm install
 npm run dev
 ```
 
-No code or secret keys are needed in the README — just install and run.
+No keys or extra setup are shown here — you'll need your own provider keys and a database URL in an env file to fetch real cricket data. The website will still load without them, but scores won't update until the providers are configured.
 
 ---
 
